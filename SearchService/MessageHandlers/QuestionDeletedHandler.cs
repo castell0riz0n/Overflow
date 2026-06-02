@@ -1,13 +1,13 @@
-﻿using Contracts;
+using Contracts;
 using SearchService.Models;
 using Typesense;
 
 namespace SearchService.MessageHandlers;
 
-public class QuestionDeletedHandler(ITypesenseClient client)
+public class QuestionDeletedHandler(ITypesenseClient tsClient)
 {
     public async Task Handle(QuestionDeleted message)
     {
-        await client.DeleteDocument<SearchQuestion>("questions", message.QuestionId);
+        await tsClient.DeleteDocument<SearchQuestion>("questions", message.QuestionId);
     }
 }

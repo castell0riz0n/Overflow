@@ -13,31 +13,34 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.AddServiceDefaults();
-
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<TagService>();
 
 builder.Services.AddAuthentication()
-    .AddKeycloakJwtBearer(serviceName: "keycloak", realm: "overflow", opts =>
-    {
-        opts.RequireHttpsMetadata = false;
-        opts.Audience = "overflow";
-    });
-
+    .AddKeycloakJwtBearer(
+        serviceName: "keycloak",
+        realm: "overflow",
+        options =>
+        {
+            options.RequireHttpsMetadata = false;
+            options.Audience = "overflow";
+        }
+    );
+builder.Services.AddAuthorizationBuilder();
 builder.AddNpgsqlDbContext<QuestionDbContext>("questionDb");
-builder.Services.AddOpenTelemetry().WithTracing(tracing =>
+
+builder.Services.AddOpenTelemetry().WithTracing(traceProviderBuilder =>
 {
-    tracing.SetResourceBuilder(ResourceBuilder.CreateDefault()
-        .AddService(builder.Environment.ApplicationName))
+    traceProviderBuilder.SetResourceBuilder(ResourceBuilder
+            .CreateDefault().AddService(builder.Environment.ApplicationName))
         .AddSource("Wolverine");
 });
-builder.Host.UseWolverine(options =>
-{
-    options.UseRabbitMqUsingNamedConnection("messaging")
-        .AutoProvision();
-    options.PublishAllMessages().ToRabbitExchange("questions");
-});
 
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseRabbitMqUsingNamedConnection("messaging").AutoProvision();
+    opts.PublishAllMessages().ToRabbitExchange("questions");
+});
 
 var app = builder.Build();
 
@@ -51,17 +54,17 @@ app.MapControllers();
 
 app.MapDefaultEndpoints();
 
-using var scope = app.Services.CreateScope();
-var services = scope.ServiceProvider;
-try
-{
-    var context = services.GetRequiredService<QuestionDbContext>();
-    await context.Database.MigrateAsync();
-}
-catch (Exception e)
-{
-    var logger = services.GetRequiredService<ILogger<Program>>();
-    logger.LogError(e, "An error occurred seeding the DB.");
+using var scope = app.Services.CreateScope();  
+var services = scope.ServiceProvider;  
+try  
+{  
+    var context = services.GetRequiredService<QuestionDbContext>();  
+    await context.Database.MigrateAsync();  
+}  
+catch (Exception ex)  
+{  
+    var logger = services.GetRequiredService<ILogger<Program>>();  
+    logger.LogError(ex, "An error occured during migration");  
 }
 
 app.Run();

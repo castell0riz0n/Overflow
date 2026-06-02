@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestionService.Data;
 using QuestionService.Models;
@@ -7,12 +7,13 @@ namespace QuestionService.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class TagsController(QuestionDbContext db): ControllerBase
+public class TagsController(QuestionDbContext db) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<Tag>>> GetTags()
+    public async Task<ActionResult<IReadOnlyList<Tag>>> GetTags(string? sortBy)
     {
-        return await db.Tags.OrderBy(a => a.Name).AsNoTracking().ToListAsync();
+        return await db.Tags
+            .OrderBy(x => x.Name)
+            .ToListAsync();
     }
-    
 }

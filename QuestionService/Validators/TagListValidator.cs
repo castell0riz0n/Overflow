@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace QuestionService.Validators;
 
@@ -11,6 +11,6 @@ public class TagListValidator(int min, int max) : ValidationAttribute
             if (tags.Count >= min && tags.Count <= max) return ValidationResult.Success;
         }
         
-        return new ValidationResult($"The number of tags must be between {min} and {max}");
+        return new ValidationResult($"You must provide at least {min} and {max} tags.");
     }
 }
