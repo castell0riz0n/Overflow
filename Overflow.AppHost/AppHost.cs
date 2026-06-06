@@ -1,17 +1,38 @@
+using Microsoft.Extensions.Hosting;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
+var compose = builder.AddDockerComposeEnvironment("production")
+    .WithDashboard(dash => dash.WithHostPort(8080));
+
 var keycloak = builder.AddKeycloak("keycloak", 6001)
-    .WithDataVolume("keycloak-data");
+    .WithDataVolume("keycloak-data")
+    .WithRealmImport("../infra/realms")
+    .WithEnvironment("KC_HTTP_ENABLED", "true")
+    .WithEnvironment("KC_HOSTNAME_STRICT", "false")
+    .WithEnvironment("KC_HOSTNAME_STRICT_HTTPS", "false")
+    // Tell Keycloak to strictly use this domain name for all issuer validations
+    .WithEnvironment("KC_HOSTNAME", "id.overflow.local") 
+    .WithEnvironment("VIRTUAL_HOST", "id.overflow.local")
+    .WithEnvironment("VIRTUAL_PORT", "8080")
+    .WithEndpoint(6001, 8080, name: "keycloak", scheme: "http", isExternal: true);
 
 var postgres = builder.AddPostgres("postgres", port: 5432)
     .WithDataVolume("postgres-data")
     .WithPgAdmin();
 
-var typesenseApiKey = builder.AddParameter("typesense-api-key", secret: true);
+// var typesenseApiKey = builder.AddParameter("typesense-api-key", secret: true);
+
+var typesenseApiKey = builder.Environment.IsDevelopment()
+    ? builder.Configuration["Parameters:typesense-api-key"]
+      ?? throw new InvalidOperationException("Missing parameters:typesense-api-key")
+    : "${TYPESENSE_API_KEY}";
 
 var typesense = builder.AddContainer("typesense", "typesense/typesense", "29.0")
-    .WithArgs("--data-dir", "/data", "--api-key", typesenseApiKey, "--enable-cors")
     .WithVolume("typesense-data", "/data")
+    .WithEnvironment("TYPESENSE_DATA_DIR", "/data")
+    .WithEnvironment("TYPESENSE_ENABLE_CORS", "true")
+    .WithEnvironment("TYPESENSE_API_KEY", typesenseApiKey)
     .WithHttpEndpoint(8108, 8108, name: "typesense");
 
 var typeSenseContainer = typesense.GetEndpoint("typesense");
@@ -36,5 +57,24 @@ var searchService = builder.AddProject<Projects.SearchService>("search-svc")
     .WithReference(rabbitmq)
     .WaitFor(typesense)
     .WaitFor(rabbitmq);
+
+var yarp = builder.AddYarp("gateway")
+    .WithConfiguration(yarpBuilder =>
+    {
+        yarpBuilder.AddRoute("/questions/{**catch-all}", questionService);
+        yarpBuilder.AddRoute("/tags/{**catch-all}", questionService);
+        yarpBuilder.AddRoute("/search/{**catch-all}", searchService);
+    })
+    .WithEnvironment("ASPNETCORE_URLS", "http://*:8001")
+    .WithEndpoint(port: 8001, targetPort: 8001, name: "gateway", scheme: "http", isExternal: true)
+    .WithEnvironment("VIRTUAL_HOST", "api.overflow.local")
+    .WithEnvironment("VIRTUAL_PORT", "8001");
+
+if (builder.ExecutionContext.IsPublishMode)
+{
+    builder.AddContainer("nginx-proxy", "nginxproxy/nginx-proxy", "1.11")
+        .WithEndpoint(80, 80, name: "nginx", scheme: "http", isExternal: true)
+        .WithBindMount("/var/run/docker.sock", "/tmp/docker.sock", true);
+}
 
 builder.Build().Run();

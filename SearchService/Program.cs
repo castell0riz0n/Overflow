@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Common;
 using JasperFx.CodeGeneration.Model;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -16,18 +17,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.AddServiceDefaults();
 
-builder.Services.AddOpenTelemetry().WithTracing(traceProviderBuilder =>
-{
-    traceProviderBuilder.SetResourceBuilder(ResourceBuilder
-            .CreateDefault().AddService(builder.Environment.ApplicationName))
-        .AddSource("Wolverine");
-});
 
-builder.Host.UseWolverine(opts =>
+await builder.UseWolverineWithRabbitMqAsync(opts =>
 {
-    opts.UseRabbitMqUsingNamedConnection("messaging")
-        .AutoProvision();
-
     opts.ListenToRabbitQueue("questions.search", cfg =>
     {
         cfg.BindExchange("questions");
@@ -35,7 +27,10 @@ builder.Host.UseWolverine(opts =>
 
     opts.ServiceLocationPolicy =
         ServiceLocationPolicy.AlwaysAllowed;
+    opts.ApplicationAssembly = typeof(Program).Assembly;
 });
+
+
 var typesenseUri = builder.Configuration["services:typesense:typesense:0"];
 if (string.IsNullOrWhiteSpace(typesenseUri))
     throw new InvalidOperationException("Typesense URI not found in configuration");
