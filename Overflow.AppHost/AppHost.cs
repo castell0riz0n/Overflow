@@ -2,20 +2,31 @@ using Microsoft.Extensions.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// var compose = builder.AddDockerComposeEnvironment("production")
+//     .WithDashboard(dash => dash.WithHostPort(8080));
+//
+// var keycloak = builder.AddKeycloak("keycloak", 6001)
+//     .WithDataVolume("keycloak-data")
+//     .WithRealmImport("../infra/realms")
+//     .WithEnvironment("KC_HTTP_ENABLED", "true")
+//     .WithEnvironment("KC_HOSTNAME_STRICT", "false")
+//     .WithEnvironment("KC_HOSTNAME_STRICT_HTTPS", "false")
+//     // Tell Keycloak to strictly use this domain name for all issuer validations
+//     .WithEnvironment("KC_HOSTNAME", "id.overflow.local") 
+//     .WithEnvironment("VIRTUAL_HOST", "id.overflow.local")
+//     .WithEnvironment("VIRTUAL_PORT", "8080")
+//     .WithEndpoint(6001, 8080, name: "keycloak", scheme: "http", isExternal: true);
+
 var compose = builder.AddDockerComposeEnvironment("production")
-    .WithDashboard(dash => dash.WithHostPort(8080));
+    .WithDashboard(dashboard => dashboard.WithHostPort(8080));
 
 var keycloak = builder.AddKeycloak("keycloak", 6001)
     .WithDataVolume("keycloak-data")
     .WithRealmImport("../infra/realms")
     .WithEnvironment("KC_HTTP_ENABLED", "true")
     .WithEnvironment("KC_HOSTNAME_STRICT", "false")
-    .WithEnvironment("KC_HOSTNAME_STRICT_HTTPS", "false")
-    // Tell Keycloak to strictly use this domain name for all issuer validations
-    .WithEnvironment("KC_HOSTNAME", "id.overflow.local") 
     .WithEnvironment("VIRTUAL_HOST", "id.overflow.local")
-    .WithEnvironment("VIRTUAL_PORT", "8080")
-    .WithEndpoint(6001, 8080, name: "keycloak", scheme: "http", isExternal: true);
+    .WithEnvironment("VIRTUAL_PORT", "8080");
 
 var postgres = builder.AddPostgres("postgres", port: 5432)
     .WithDataVolume("postgres-data")
@@ -65,10 +76,29 @@ var yarp = builder.AddYarp("gateway")
         yarpBuilder.AddRoute("/tags/{**catch-all}", questionService);
         yarpBuilder.AddRoute("/search/{**catch-all}", searchService);
     })
+    // 1. Override default "http" endpoint parameters
+    .WithEndpoint("http", endpoint =>
+    {
+        endpoint.Port = 8001;       // Host Port
+        endpoint.TargetPort = 8001; // Container Port
+    })
+    // 2. Override default "https" endpoint parameters (Prevents random HTTPS ports)
+    .WithEndpoint("https", endpoint =>
+    {
+        endpoint.Port = 8002;       // Host Port
+        endpoint.TargetPort = 8002; // Container Port
+    })
+    // 3. Keep your custom ASPNETCORE_URLS matching the targetPort
     .WithEnvironment("ASPNETCORE_URLS", "http://*:8001")
-    .WithEndpoint(port: 8001, targetPort: 8001, name: "gateway", scheme: "http", isExternal: true)
     .WithEnvironment("VIRTUAL_HOST", "api.overflow.local")
     .WithEnvironment("VIRTUAL_PORT", "8001");
+
+
+var webapp = builder.AddJavaScriptApp("webapp", "../webapp")
+    .WithReference(keycloak)
+    .WithReference(yarp)
+    .WithHttpEndpoint(env: "PORT", port: 3000);
+
 
 if (builder.ExecutionContext.IsPublishMode)
 {
